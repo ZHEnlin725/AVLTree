@@ -1,36 +1,33 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace AVL
 {
-   public abstract partial class AVLTreeBase<TValue>
+    public abstract partial class AVLTreeBase<TValue>
     {
-        protected partial class AVLNode : IAVLNode
+        protected partial class AVLTreeNode : AVLTree_API.IAVLTreeNode
         {
-            public static AVLNode empty = new AVLNode();
-
             public TValue value;
 
-            public int height { get; set; } = AVL.AVLOp.InvalidIndex;
+            public int height { get; set; }
 
-            public int parent_index { get; set; } = AVLOp.InvalidIndex;
+            public int parent_index { get; set; } = AVLTree_API.None;
 
-            public int left_child_index { get; set; } = AVLOp.InvalidIndex;
+            public int left_child_index { get; set; } = AVLTree_API.None;
 
-            public int right_child_index { get; set; } = AVLOp.InvalidIndex;
+            public int right_child_index { get; set; } = AVLTree_API.None;
         }
 
-        protected int size;
-        protected int rootIndex = AVLOp.InvalidIndex;
+        protected int size, rootIndex = AVLTree_API.None;
 
         protected Func<TValue, TValue, int> compareFunc;
-        protected AVLNode[] nodes;
+        protected AVLTreeNode[] nodes;
+
+        public int numNodes => size;
 
         public AVLTreeBase(Func<TValue, TValue, int> compareFunc, int capacity = 32)
         {
             this.compareFunc = compareFunc;
-            this.nodes = new AVLNode[Math.Max(32, capacity)];
+            this.nodes = new AVLTreeNode[Math.Max(32, capacity)];
         }
 
         public AVLTreeBase(int capacity = 32) : this((x, y) =>
@@ -53,7 +50,7 @@ namespace AVL
             if (tryDelete(ref index, value, out var deletedIndex))
             {
                 rootIndex = index;
-                removeAndModifySize(deletedIndex, ref rootIndex);
+                AVLTree_API.fillup(deletedIndex, --size, nodes, ref rootIndex);
                 return true;
             }
 
@@ -62,24 +59,25 @@ namespace AVL
 
         public virtual void Clear()
         {
-            destroy(rootIndex);
-            rootIndex = AVLOp.InvalidIndex;
+            AVLTree_API.destroy(rootIndex, nodes);
+            rootIndex = AVLTree_API.None;
             size = 0;
         }
 
-        protected virtual bool tryDelete(ref int index, TValue value, out int deletedIndex)
+        protected virtual bool tryDelete(ref int nodeIndex, TValue value, out int deletedIndex)
         {
-            deletedIndex = AVLOp.InvalidIndex;
-            if (index < 0 || index >= nodes.Length)
+            deletedIndex = AVLTree_API.None;
+            if (nodeIndex < 0 || nodeIndex >= size)
                 return false;
-            var node = nodes[index];
+            var node = nodes[nodeIndex];
             if (compareFunc(value, node.value) < 0)
             {
                 var left_child_index = node.left_child_index;
                 if (tryDelete(ref left_child_index, value, out deletedIndex))
                 {
                     node.left_child_index = left_child_index;
-                    index = AVLOp.balance(index, nodes);
+                    AVLTree_API.udpate_height(nodeIndex, nodes);
+                    nodeIndex = AVLTree_API.self_balancing(nodeIndex, nodes);
                     return true;
                 }
             }
@@ -89,7 +87,8 @@ namespace AVL
                 if (tryDelete(ref right_child_index, value, out deletedIndex))
                 {
                     node.right_child_index = right_child_index;
-                    index = AVLOp.balance(index, nodes);
+                    AVLTree_API.udpate_height(nodeIndex, nodes);
+                    nodeIndex = AVLTree_API.self_balancing(nodeIndex, nodes);
                     return true;
                 }
             }
@@ -97,13 +96,13 @@ namespace AVL
             {
                 var left_child_index = node.left_child_index;
                 var right_child_index = node.right_child_index;
-                var has_left = left_child_index != AVLOp.InvalidIndex;
-                var has_right = right_child_index != AVLOp.InvalidIndex;
+                var has_left = left_child_index != AVLTree_API.None;
+                var has_right = right_child_index != AVLTree_API.None;
                 if (has_left && has_right)
                 {
                     var child_index = right_child_index;
-                    while (child_index >= 0 && child_index < nodes.Length &&
-                           nodes[child_index].left_child_index != AVLOp.InvalidIndex)
+                    while (child_index >= 0 && child_index < size &&
+                           nodes[child_index].left_child_index != AVLTree_API.None)
                         child_index = nodes[child_index].left_child_index;
 
                     var child_node = nodes[child_index];
@@ -113,13 +112,14 @@ namespace AVL
                     {
                         node.value = child_val;
                         node.right_child_index = right_child_index;
-                        index = AVLOp.balance(index, nodes);
+                        AVLTree_API.udpate_height(nodeIndex, nodes);
+                        nodeIndex = AVLTree_API.self_balancing(nodeIndex, nodes);
                         return true;
                     }
                 }
                 else
                 {
-                    var child_index = AVLOp.InvalidIndex;
+                    var child_index = AVLTree_API.None;
                     if (has_left)
                     {
                         child_index = left_child_index;
@@ -129,27 +129,27 @@ namespace AVL
                         child_index = right_child_index;
                     }
 
-                    if (child_index != AVLOp.InvalidIndex)
+                    if (child_index != AVLTree_API.None)
                     {
                         var child_node = nodes[child_index];
                         var child_left_child_index = child_node.left_child_index;
                         var child_right_child_index = child_node.right_child_index;
 
-                        AVLOp.setParent(child_index, node.parent_index, nodes);
+                        AVLTree_API.set_parent(child_index, node.parent_index, nodes);
 
-                        AVLOp.swap(nodes, child_index, index);
+                        AVLTree_API.swap(nodes, child_index, nodeIndex);
 
-                        AVLOp.setParent(child_left_child_index, index, nodes);
-                        AVLOp.setParent(child_right_child_index, index, nodes);
+                        AVLTree_API.set_parent(child_left_child_index, nodeIndex, nodes);
+                        AVLTree_API.set_parent(child_right_child_index, nodeIndex, nodes);
 
                         deletedIndex = child_index;
                         nodes[deletedIndex] = null;
                     }
                     else
                     {
-                        deletedIndex = index;
+                        deletedIndex = nodeIndex;
                         nodes[deletedIndex] = null;
-                        index = AVLOp.InvalidIndex;
+                        nodeIndex = AVLTree_API.None;
                     }
 
                     return true;
@@ -159,11 +159,10 @@ namespace AVL
             return false;
         }
 
-        protected virtual int insert(int nodeIndex, TValue value, int parentIndex = AVLOp.InvalidIndex)
+        protected virtual int insert(int nodeIndex, TValue value, int parentIndex = AVLTree_API.None)
         {
-            if (nodeIndex == AVLOp.InvalidIndex) nodeIndex = size++;
-
-            ensureCapacity(nodeIndex + 1);
+            if (nodeIndex == AVLTree_API.None) nodeIndex = size++;
+            nodes = AVLTree_API.ensure_capacity(nodes, nodeIndex + 1);
             var node = nodes[nodeIndex];
             if (node == null)
             {
@@ -175,107 +174,46 @@ namespace AVL
             else if (compareFunc(value, node.value) < 0)
             {
                 node.left_child_index = insert(node.left_child_index, value, nodeIndex);
-                nodeIndex = AVLOp.balance(nodeIndex, nodes);
             }
             else
             {
                 node.right_child_index = insert(node.right_child_index, value, nodeIndex);
-                nodeIndex = AVLOp.balance(nodeIndex, nodes);
             }
 
-            AVLOp.updateHeight(nodeIndex, nodes);
-            return nodeIndex;
+            AVLTree_API.udpate_height(nodeIndex, nodes);
+            return AVLTree_API.self_balancing(nodeIndex, nodes);
         }
 
-        protected virtual void destroy(int nodeIndex)
-        {
-            if (nodeIndex >= 0 && nodeIndex < nodes.Length)
-            {
-                var node = nodes[nodeIndex];
-                if (node != null)
-                {
-                    destroy(node.left_child_index);
-                    destroy(node.right_child_index);
-                }
-
-                nodes[nodeIndex] = null;
-            }
-        }
-
-        protected virtual void removeAndModifySize(int index, ref int rootIndex)
-        {
-            var last_index = --size;
-            if (index < last_index)
-            {
-                var last_node = nodes[last_index];
-                if (last_node.parent_index != AVLOp.InvalidIndex)
-                {
-                    var parent = nodes[last_node.parent_index];
-                    if (parent.left_child_index == last_index)
-                    {
-                        parent.left_child_index = index;
-                    }
-                    else
-                    {
-                        parent.right_child_index = index;
-                    }
-                }
-
-                AVLOp.swap(nodes, last_index, index);
-
-                AVLOp.setParent(last_node.left_child_index, index, nodes);
-                AVLOp.setParent(last_node.right_child_index, index, nodes);
-
-                nodes[last_index] = null;
-
-                if (last_index == rootIndex)
-                    rootIndex = index;
-            }
-        }
-
-        protected virtual void ensureCapacity(int size)
-        {
-            var length = nodes.Length;
-            if (length >= size) return;
-            var newSize = length;
-            while (newSize < size)
-                newSize = (newSize << 1) + 1;
-            var avlTreeNodes = new AVLNode[newSize];
-            Array.Copy(nodes, avlTreeNodes, length);
-            nodes = avlTreeNodes;
-        }
-
-        protected virtual AVLNode createNode() => new AVLNode();
+        protected virtual AVLTreeNode createNode() => new AVLTreeNode();
     }
 
     public abstract partial class AVLTreeBase_KV<TKey, TValue>
     {
-        protected partial class AVLNode : IAVLNode
+        protected partial class AVLTreeNode : AVLTree_API.IAVLTreeNode
         {
-            public static AVLNode empty = new AVLNode();
-
             public TKey key;
             public TValue value;
 
             public int height { get; set; }
 
-            public int parent_index { get; set; } = AVLOp.InvalidIndex;
+            public int parent_index { get; set; } = AVLTree_API.None;
 
-            public int left_child_index { get; set; } = AVLOp.InvalidIndex;
+            public int left_child_index { get; set; } = AVLTree_API.None;
 
-            public int right_child_index { get; set; } = AVLOp.InvalidIndex;
+            public int right_child_index { get; set; } = AVLTree_API.None;
         }
 
-        protected int size;
-        protected int rootIndex = AVLOp.InvalidIndex;
+        protected int size, rootIndex = AVLTree_API.None;
 
         protected Func<TKey, TKey, int> compareFunc;
-        protected AVLNode[] nodes;
+        protected AVLTreeNode[] nodes;
+
+        public int numNodes => size;
 
         public AVLTreeBase_KV(Func<TKey, TKey, int> compareFunc, int capacity = 32)
         {
             this.compareFunc = compareFunc;
-            this.nodes = new AVLNode[Math.Max(32, capacity)];
+            this.nodes = new AVLTreeNode[Math.Max(32, capacity)];
         }
 
         public AVLTreeBase_KV(int capacity = 32) : this((x, y) =>
@@ -285,16 +223,13 @@ namespace AVL
                 throw new ArgumentException($"{typeof(IComparable)} Must Assignable From {typeof(TKey)}");
         }
 
+        public virtual TValue Query(TKey key) =>
+            key == null ? default : query(rootIndex, key);
+
         public virtual void Insert(TKey key, TValue value)
         {
             if (key == null) return;
             rootIndex = insert(rootIndex, key, value);
-        }
-
-        public virtual TValue Query(TKey key)
-        {
-            if (key == null) return default;
-            return query(rootIndex, key);
         }
 
         public virtual bool Delete(TKey key, out TValue value)
@@ -305,7 +240,7 @@ namespace AVL
             if (tryDelete(ref index, key, out value, out var deletedIndex))
             {
                 rootIndex = index;
-                removeAndModifySize(deletedIndex, ref rootIndex);
+                AVLTree_API.fillup(deletedIndex, --size, nodes, ref rootIndex);
                 return true;
             }
 
@@ -314,25 +249,26 @@ namespace AVL
 
         public virtual void Clear()
         {
-            destroy(rootIndex);
-            rootIndex = AVLOp.InvalidIndex;
+            AVLTree_API.destroy(rootIndex, nodes);
+            rootIndex = AVLTree_API.None;
             size = 0;
         }
 
-        protected virtual bool tryDelete(ref int index, TKey key, out TValue value, out int deletedIndex)
+        protected virtual bool tryDelete(ref int nodeIndex, TKey key, out TValue value, out int deletedIndex)
         {
             value = default;
-            deletedIndex = AVLOp.InvalidIndex;
-            if (index < 0 || index >= nodes.Length)
+            deletedIndex = AVLTree_API.None;
+            if (nodeIndex < 0 || nodeIndex >= size)
                 return false;
-            var node = nodes[index];
+            var node = nodes[nodeIndex];
             if (compareFunc(key, node.key) < 0)
             {
                 var left_child_index = node.left_child_index;
                 if (tryDelete(ref left_child_index, key, out value, out deletedIndex))
                 {
                     node.left_child_index = left_child_index;
-                    index = AVLOp.balance(index, nodes);
+                    AVLTree_API.udpate_height(nodeIndex, nodes);
+                    nodeIndex = AVLTree_API.self_balancing(nodeIndex, nodes);
                     return true;
                 }
             }
@@ -342,7 +278,8 @@ namespace AVL
                 if (tryDelete(ref right_child_index, key, out value, out deletedIndex))
                 {
                     node.right_child_index = right_child_index;
-                    index = AVLOp.balance(index, nodes);
+                    AVLTree_API.udpate_height(nodeIndex, nodes);
+                    nodeIndex = AVLTree_API.self_balancing(nodeIndex, nodes);
                     return true;
                 }
             }
@@ -350,13 +287,13 @@ namespace AVL
             {
                 var left_child_index = node.left_child_index;
                 var right_child_index = node.right_child_index;
-                var has_left = left_child_index != AVLOp.InvalidIndex;
-                var has_right = right_child_index != AVLOp.InvalidIndex;
+                var has_left = left_child_index != AVLTree_API.None;
+                var has_right = right_child_index != AVLTree_API.None;
                 if (has_left && has_right)
                 {
                     var child_index = right_child_index;
-                    while (child_index >= 0 && child_index < nodes.Length &&
-                           nodes[child_index].left_child_index != AVLOp.InvalidIndex)
+                    while (child_index >= 0 && child_index < size &&
+                           nodes[child_index].left_child_index != AVLTree_API.None)
                         child_index = nodes[child_index].left_child_index;
 
                     var child_node = nodes[child_index];
@@ -368,13 +305,14 @@ namespace AVL
                         node.key = child_key;
                         node.value = child_val;
                         node.right_child_index = right_child_index;
-                        index = AVLOp.balance(index, nodes);
+                        AVLTree_API.udpate_height(nodeIndex, nodes);
+                        nodeIndex = AVLTree_API.self_balancing(nodeIndex, nodes);
                         return true;
                     }
                 }
                 else
                 {
-                    var child_index = AVLOp.InvalidIndex;
+                    var child_index = AVLTree_API.None;
                     if (has_left)
                     {
                         child_index = left_child_index;
@@ -384,18 +322,18 @@ namespace AVL
                         child_index = right_child_index;
                     }
 
-                    if (child_index != AVLOp.InvalidIndex)
+                    if (child_index != AVLTree_API.None)
                     {
                         var child_node = nodes[child_index];
                         var child_left_child_index = child_node.left_child_index;
                         var child_right_child_index = child_node.right_child_index;
 
-                        AVLOp.setParent(child_index, node.parent_index, nodes);
+                        AVLTree_API.set_parent(child_index, node.parent_index, nodes);
 
-                        AVLOp.swap(nodes, child_index, index);
+                        AVLTree_API.swap(nodes, child_index, nodeIndex);
 
-                        AVLOp.setParent(child_left_child_index, index, nodes);
-                        AVLOp.setParent(child_right_child_index, index, nodes);
+                        AVLTree_API.set_parent(child_left_child_index, nodeIndex, nodes);
+                        AVLTree_API.set_parent(child_right_child_index, nodeIndex, nodes);
 
                         deletedIndex = child_index;
                         value = nodes[deletedIndex].value;
@@ -403,10 +341,10 @@ namespace AVL
                     }
                     else
                     {
-                        deletedIndex = index;
+                        deletedIndex = nodeIndex;
                         value = nodes[deletedIndex].value;
                         nodes[deletedIndex] = null;
-                        index = AVLOp.InvalidIndex;
+                        nodeIndex = AVLTree_API.None;
                     }
 
                     return true;
@@ -416,30 +354,23 @@ namespace AVL
             return false;
         }
 
-        protected virtual TValue query(int index, TKey key)
+        protected virtual TValue query(int nodeIndex, TKey key)
         {
-            if (index < 0 || index >= nodes.Length)
+            if (nodeIndex < 0 || nodeIndex >= size)
                 return default;
-            var node = nodes[index];
+            var node = nodes[nodeIndex];
             var compareVal = compareFunc(key, node.key);
-            if (compareVal < 0)
-            {
-                return query(node.left_child_index, key);
-            }
-
-            if (compareVal > 0)
-            {
-                return query(node.right_child_index, key);
-            }
-
-            return node.value;
+            return compareVal < 0
+                ? query(node.left_child_index, key)
+                : compareVal > 0
+                    ? query(node.right_child_index, key)
+                    : node.value;
         }
 
-        protected virtual int insert(int nodeIndex, TKey key, TValue value, int parentIndex = AVLOp.InvalidIndex)
+        protected virtual int insert(int nodeIndex, TKey key, TValue value, int parentIndex = AVLTree_API.None)
         {
-            if (nodeIndex == AVLOp.InvalidIndex) nodeIndex = size++;
-
-            ensureCapacity(nodeIndex + 1);
+            if (nodeIndex == AVLTree_API.None) nodeIndex = size++;
+            nodes = AVLTree_API.ensure_capacity(nodes, nodeIndex + 1);
             var node = nodes[nodeIndex];
             if (node == null)
             {
@@ -452,165 +383,105 @@ namespace AVL
             else if (compareFunc(key, node.key) < 0)
             {
                 node.left_child_index = insert(node.left_child_index, key, value, nodeIndex);
-                nodeIndex = AVLOp.balance(nodeIndex, nodes);
             }
             else
             {
                 node.right_child_index = insert(node.right_child_index, key, value, nodeIndex);
-                nodeIndex = AVLOp.balance(nodeIndex, nodes);
             }
 
-            AVLOp.updateHeight(nodeIndex, nodes);
-            return nodeIndex;
+            AVLTree_API.udpate_height(nodeIndex, nodes);
+            return AVLTree_API.self_balancing(nodeIndex, nodes);
         }
 
-        protected virtual void destroy(int nodeIndex)
-        {
-            if (nodeIndex >= 0 && nodeIndex < nodes.Length)
-            {
-                var node = nodes[nodeIndex];
-                if (node != null)
-                {
-                    destroy(node.left_child_index);
-                    destroy(node.right_child_index);
-                }
-
-                nodes[nodeIndex] = null;
-            }
-        }
-
-        protected virtual void removeAndModifySize(int index, ref int rootIndex)
-        {
-            var last_index = --size;
-            if (index < last_index)
-            {
-                var last_node = nodes[last_index];
-                if (last_node.parent_index != AVLOp.InvalidIndex)
-                {
-                    var parent = nodes[last_node.parent_index];
-                    if (parent.left_child_index == last_index)
-                    {
-                        parent.left_child_index = index;
-                    }
-                    else
-                    {
-                        parent.right_child_index = index;
-                    }
-                }
-
-                AVLOp.swap(nodes, last_index, index);
-
-                AVLOp.setParent(last_node.left_child_index, index, nodes);
-                AVLOp.setParent(last_node.right_child_index, index, nodes);
-
-                nodes[last_index] = null;
-
-                if (last_index == rootIndex)
-                    rootIndex = index;
-            }
-        }
-
-        protected virtual void ensureCapacity(int size)
-        {
-            var length = nodes.Length;
-            if (length >= size) return;
-            var newSize = length;
-            while (newSize < size)
-                newSize = (newSize << 1) + 1;
-            var avlTreeNodes = new AVLNode[newSize];
-            Array.Copy(nodes, avlTreeNodes, length);
-            nodes = avlTreeNodes;
-        }
-
-        protected virtual AVLNode createNode() => new AVLNode();
+        protected virtual AVLTreeNode createNode() => new AVLTreeNode();
     }
 
-    public interface IAVLNode
+    internal static class AVLTree_API
     {
-        public int height { get; set; }
-
-        public int parent_index { get; set; }
-
-        public int left_child_index { get; set; }
-
-        public int right_child_index { get; set; }
-    }
-
-    internal static class AVLOp
-    {
-        public const int InvalidIndex = -1;
-
-        public static int balance(int nodeIndex, IAVLNode[] nodes)
+        internal interface IAVLTreeNode
         {
-            if (nodeIndex < 0 || nodeIndex >= nodes.Length)
-                return InvalidIndex;
-            if (nodes[nodeIndex] != null)
+            public int height { get; set; }
+
+            public int parent_index { get; set; }
+
+            public int left_child_index { get; set; }
+
+            public int right_child_index { get; set; }
+        }
+
+        internal const int None = -1;
+
+        internal static int self_balancing<T>(int node_index, T[] nodes) where T : IAVLTreeNode
+        {
+            if (node_index < 0 || node_index >= nodes.Length)
+                return None;
+            if (nodes[node_index] != null)
             {
-                var left_child_index = nodes[nodeIndex].left_child_index;
-                var right_child_index = nodes[nodeIndex].right_child_index;
-                var left_height = getHeight(left_child_index, nodes);
-                var right_height = getHeight(right_child_index, nodes);
+                var left_child_index = nodes[node_index].left_child_index;
+                var right_child_index = nodes[node_index].right_child_index;
+                var left_height = height(left_child_index, nodes);
+                var right_height = height(right_child_index, nodes);
                 if (Math.Abs(left_height - right_height) >= 2)
                 {
                     if (left_height > right_height)
                     {
                         var child_index_legal = left_child_index >= 0 && left_child_index < nodes.Length;
                         var left_left_height =
-                            child_index_legal && nodes[left_child_index].left_child_index != InvalidIndex
-                                ? getHeight(nodes[left_child_index].left_child_index, nodes)
+                            child_index_legal && nodes[left_child_index].left_child_index != None
+                                ? height(nodes[left_child_index].left_child_index, nodes)
                                 : 0;
                         var left_right_height =
-                            child_index_legal && nodes[left_child_index].right_child_index != InvalidIndex
-                                ? getHeight(nodes[left_child_index].right_child_index, nodes)
+                            child_index_legal && nodes[left_child_index].right_child_index != None
+                                ? height(nodes[left_child_index].right_child_index, nodes)
                                 : 0;
                         if (left_left_height > left_right_height)
                         {
-                            nodeIndex = rightRot(nodeIndex, nodes);
+                            node_index = right_rot(node_index, nodes);
                         }
                         else
                         {
-                            nodes[nodeIndex].left_child_index = leftRot(nodes[nodeIndex].left_child_index, nodes);
-                            nodeIndex = rightRot(nodeIndex, nodes);
+                            nodes[node_index].left_child_index = left_rot(nodes[node_index].left_child_index, nodes);
+                            node_index = right_rot(node_index, nodes);
                         }
                     }
                     else
                     {
                         var child_index_legal = right_child_index >= 0 && right_child_index < nodes.Length;
                         var right_left_height =
-                            child_index_legal && nodes[right_child_index].left_child_index != InvalidIndex
-                                ? getHeight(nodes[right_child_index].left_child_index, nodes)
+                            child_index_legal && nodes[right_child_index].left_child_index != None
+                                ? height(nodes[right_child_index].left_child_index, nodes)
                                 : 0;
                         var right_right_height =
-                            child_index_legal && nodes[right_child_index].right_child_index != InvalidIndex
-                                ? getHeight(nodes[right_child_index].right_child_index, nodes)
+                            child_index_legal && nodes[right_child_index].right_child_index != None
+                                ? height(nodes[right_child_index].right_child_index, nodes)
                                 : 0;
                         if (right_right_height >= right_left_height)
                         {
-                            nodeIndex = leftRot(nodeIndex, nodes);
+                            node_index = left_rot(node_index, nodes);
                         }
                         else
                         {
-                            nodes[nodeIndex].right_child_index = rightRot(nodes[nodeIndex].right_child_index, nodes);
-                            nodeIndex = leftRot(nodeIndex, nodes);
+                            nodes[node_index].right_child_index = right_rot(nodes[node_index].right_child_index, nodes);
+                            node_index = left_rot(node_index, nodes);
                         }
                     }
                 }
             }
 
-            return nodeIndex;
+            return node_index;
         }
 
-        public static int leftRot(int nodeIndex, IAVLNode[] nodes)
+        internal static int left_rot<T>(int node_index, T[] nodes) where T : IAVLTreeNode
         {
-            var node = nodes[nodeIndex];
+            var node = nodes[node_index];
             var right_child_index = node.right_child_index;
             var right_child = nodes[right_child_index];
             var right_child_left_child_index = right_child.left_child_index;
-            nodes[right_child_index].left_child_index = nodeIndex;
-            var parent_index = nodes[nodeIndex].parent_index;
+            nodes[right_child_index].left_child_index = node_index;
+            var parent_index = nodes[node_index].parent_index;
             if (parent_index >= 0 && parent_index < nodes.Length)
             {
-                if (nodes[parent_index].left_child_index == nodeIndex)
+                if (nodes[parent_index].left_child_index == node_index)
                 {
                     nodes[parent_index].left_child_index = right_child_index;
                 }
@@ -621,28 +492,28 @@ namespace AVL
             }
 
             nodes[right_child_index].parent_index = parent_index;
-            nodes[nodeIndex].parent_index = right_child_index;
-            nodes[nodeIndex].right_child_index = right_child_left_child_index;
+            nodes[node_index].parent_index = right_child_index;
+            nodes[node_index].right_child_index = right_child_left_child_index;
             if (right_child_left_child_index >= 0 &&
                 right_child_left_child_index < nodes.Length &&
                 nodes[right_child_left_child_index] != null)
-                nodes[right_child_left_child_index].parent_index = nodeIndex;
-            updateHeight(nodeIndex, nodes);
-            updateHeight(right_child_index, nodes);
+                nodes[right_child_left_child_index].parent_index = node_index;
+            udpate_height(node_index, nodes);
+            udpate_height(right_child_index, nodes);
             return right_child_index;
         }
 
-        public static int rightRot(int nodeIndex, IAVLNode[] nodes)
+        internal static int right_rot<T>(int node_index, T[] nodes) where T : IAVLTreeNode
         {
-            var node = nodes[nodeIndex];
+            var node = nodes[node_index];
             var left_child_index = node.left_child_index;
             var left_child = nodes[left_child_index];
             var left_child_right_child_index = left_child.right_child_index;
-            nodes[left_child_index].right_child_index = nodeIndex;
+            nodes[left_child_index].right_child_index = node_index;
             var parent_index = node.parent_index;
             if (parent_index >= 0 && parent_index < nodes.Length)
             {
-                if (nodes[parent_index].left_child_index == nodeIndex)
+                if (nodes[parent_index].left_child_index == node_index)
                 {
                     nodes[parent_index].left_child_index = left_child_index;
                 }
@@ -653,23 +524,23 @@ namespace AVL
             }
 
             nodes[left_child_index].parent_index = parent_index;
-            nodes[nodeIndex].parent_index = left_child_index;
-            nodes[nodeIndex].left_child_index = left_child_right_child_index;
+            nodes[node_index].parent_index = left_child_index;
+            nodes[node_index].left_child_index = left_child_right_child_index;
             if (left_child_right_child_index >= 0 &&
                 left_child_right_child_index < nodes.Length &&
                 nodes[left_child_right_child_index] != null)
-                nodes[left_child_right_child_index].parent_index = nodeIndex;
-            updateHeight(nodeIndex, nodes);
-            updateHeight(left_child_index, nodes);
+                nodes[left_child_right_child_index].parent_index = node_index;
+            udpate_height(node_index, nodes);
+            udpate_height(left_child_index, nodes);
             return left_child_index;
         }
 
-        public static int getHeight(int nodeIndex, IAVLNode[] nodes)
+        internal static int height<T>(int node_index, T[] nodes) where T : IAVLTreeNode
         {
             var result = 0;
-            if (nodeIndex >= 0 && nodeIndex < nodes.Length)
+            if (node_index >= 0 && node_index < nodes.Length)
             {
-                var node = nodes[nodeIndex];
+                var node = nodes[node_index];
                 if (node != null) result = node.height;
                 // var lh = getHeight(node.left_child_index, nodes);
                 // var rh = getHeight(node.right_child_index, nodes);
@@ -679,28 +550,81 @@ namespace AVL
             return result;
         }
 
-        public static void updateHeight(int nodeIndex, IAVLNode[] nodes)
+        internal static void udpate_height<T>(int node_index, T[] nodes) where T : IAVLTreeNode
         {
-            if (nodeIndex < 0 || nodeIndex >= nodes.Length) return;
-            var node = nodes[nodeIndex];
+            if (node_index < 0 || node_index >= nodes.Length) return;
+            var node = nodes[node_index];
             var left_child_index = node.left_child_index;
             var right_chlid_index = node.right_child_index;
-            nodes[nodeIndex].height =
-                Math.Max(left_child_index != InvalidIndex ? nodes[left_child_index]?.height ?? 0 : 0,
-                    right_chlid_index != InvalidIndex ? nodes[right_chlid_index]?.height ?? 0 : 0) + 1;
+            nodes[node_index].height =
+                Math.Max(left_child_index != None ? nodes[left_child_index]?.height ?? 0 : 0,
+                    right_chlid_index != None ? nodes[right_chlid_index]?.height ?? 0 : 0) + 1;
         }
 
-        public static void setParent(int childIndex, int parentIndex, IAVLNode[] nodes)
+        internal static void set_parent<T>(int child_index, int parent_index, T[] nodes) where T : IAVLTreeNode
         {
-            if (childIndex >= 0 && childIndex < nodes.Length)
-                nodes[childIndex].parent_index = parentIndex;
+            if (child_index >= 0 && child_index < nodes.Length)
+                nodes[child_index].parent_index = parent_index;
         }
 
-        public static void swap(IAVLNode[] nodes, int i, int j)
+        internal static void destroy<T>(int node_index, T[] nodes) where T : IAVLTreeNode
+        {
+            if (node_index < 0 || node_index >= nodes.Length) return;
+            if (nodes[node_index] != null)
+            {
+                destroy(nodes[node_index].left_child_index, nodes);
+                destroy(nodes[node_index].right_child_index, nodes);
+                nodes[node_index] = default(T);
+            }
+        }
+
+        internal static void swap<T>(T[] nodes, int i, int j) where T : IAVLTreeNode
         {
             var node = nodes[i];
             nodes[i] = nodes[j];
             nodes[j] = node;
+        }
+
+        internal static void fillup<T>(int removed, int last_index, T[] nodes, ref int rootIndex)
+            where T : IAVLTreeNode
+        {
+            if (removed < last_index)
+            {
+                var last_node = nodes[last_index];
+                swap(nodes, last_index, removed);
+                if (last_node.parent_index != None)
+                {
+                    var parent = nodes[last_node.parent_index];
+                    if (parent.left_child_index == last_index)
+                    {
+                        parent.left_child_index = removed;
+                    }
+                    else
+                    {
+                        parent.right_child_index = removed;
+                    }
+                }
+
+                set_parent(last_node.left_child_index, removed, nodes);
+                set_parent(last_node.right_child_index, removed, nodes);
+
+                nodes[last_index] = default(T);
+
+                if (last_index == rootIndex)
+                    rootIndex = removed;
+            }
+        }
+
+        internal static T[] ensure_capacity<T>(T[] nodes, int size) where T : IAVLTreeNode
+        {
+            var n = nodes.Length;
+            if (n >= size) return nodes;
+            var newSize = n;
+            while (newSize < size)
+                newSize = (newSize << 1) + 1;
+            var newNodes = new T[newSize];
+            Array.Copy(nodes, newNodes, n);
+            return newNodes;
         }
     }
 }
