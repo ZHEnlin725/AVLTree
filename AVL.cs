@@ -400,13 +400,13 @@ namespace AVL
     {
         internal interface IAVLTreeNode
         {
-            public int height { get; set; }
+            int height { get; set; }
 
-            public int parent_index { get; set; }
+            int parent_index { get; set; }
 
-            public int left_child_index { get; set; }
+            int left_child_index { get; set; }
 
-            public int right_child_index { get; set; }
+            int right_child_index { get; set; }
         }
 
         internal const int None = -1;
@@ -471,6 +471,12 @@ namespace AVL
             return node_index;
         }
 
+        /* 左旋操作
+         *    A              C   
+         *  B   C   ===>   A   E 
+         *     D E        B D   F 
+         *        F       
+         */
         internal static int left_rot<T>(int node_index, T[] nodes) where T : IAVLTreeNode
         {
             var node = nodes[node_index];
@@ -503,6 +509,12 @@ namespace AVL
             return right_child_index;
         }
 
+        /* 右旋操作
+         *    A               B   
+         *  B   C   ===>    D   A 
+         * D E             F   E C
+         *F        
+         */
         internal static int right_rot<T>(int node_index, T[] nodes) where T : IAVLTreeNode
         {
             var node = nodes[node_index];
